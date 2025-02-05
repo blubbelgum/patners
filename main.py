@@ -202,6 +202,37 @@ class AutoBotApp:
             self.capture_preview()
             time.sleep(0.2)
 
+    def get_client_area(self, window):
+        """
+        Calculate the client area (game screen) dimensions of the given window.
+        Returns (left, top, width, height) of the client area.
+        """
+        try:
+            # Get the full window dimensions
+            left, top, width, height = (
+                window.left,
+                window.top,
+                window.width,
+                window.height,
+            )
+
+            # Approximate title bar and border sizes
+            # These values may need adjustment based on the operating system
+            title_bar_height = 30  # Approximate height of the title bar
+            border_width = 8  # Approximate width of the borders
+
+            # Adjust the region to exclude the title bar and borders
+            client_left = left + border_width
+            client_top = top + title_bar_height
+            client_width = width - 2 * border_width
+            client_height = height - title_bar_height - border_width
+
+            return client_left, client_top, client_width, client_height
+
+        except Exception as e:
+            self.log_message(f"Error calculating client area: {str(e)}", "ERROR")
+            return left, top, width, height
+
     def capture_preview(self):
         """
         Captures the game window screenshot and displays it on the Canvas.
@@ -209,9 +240,14 @@ class AutoBotApp:
         window = self.get_selected_window()
         if window:
             try:
+                # Get the client area dimensions (excluding title bar and borders)
+                client_left, client_top, client_width, client_height = (
+                    self.get_client_area(window)
+                )
+
                 # Capture the full game window screenshot
                 img = pyautogui.screenshot(
-                    region=(window.left, window.top, window.width, window.height)
+                    region=(client_left, client_top, client_width, client_height)
                 )
 
                 # Scale down the image for preview
