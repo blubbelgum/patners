@@ -5,3 +5,4 @@ dist/
 .vscode/
 main.spec/
 llm.txt
+__pycache__/

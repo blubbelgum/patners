@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import json
 import pydirectinput
 import pyautogui
@@ -15,11 +15,13 @@ from pynput.keyboard import Key, Controller as KeyboardController
 import os
 import re
 from datetime import datetime
+from modules.ui import setup_ui
 
 try:
     import pytesseract
 except ImportError:
     pytesseract = None
+
 
 # --- Helper for key conversion during playback ---
 def convert_key_str(key_str):
@@ -37,6 +39,7 @@ def convert_key_str(key_str):
     else:
         return key_str.strip("'")
 
+
 # --- Macro System (for automation) ---
 class ImageMacroSystem:
     def __init__(self, templates, log_message):
@@ -45,22 +48,26 @@ class ImageMacroSystem:
         self.log_message = log_message
 
     def execute(self, game_window):
-      return None
+        return None
 
     def detect_text(self, image, pattern):
-        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        pytesseract.pytesseract.tesseract_cmd = (
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        )
         if pytesseract is None:
             self.log_message("Tesseract OCR is not available.", "ERROR")
             return None
         try:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
             text = pytesseract.image_to_string(gray)
             if not text.strip():  # Check if the extracted text is empty
                 self.log_message("No text detected in the image.", "INFO")
                 return None
             match = re.search(pattern, text)
             if match:
-                self.log_message(f"Detected text matching pattern '{pattern}': {match.group()}")
+                self.log_message(
+                    f"Detected text matching pattern '{pattern}': {match.group()}"
+                )
                 return match.groups()
             self.log_message(f"No text matching pattern '{pattern}' found.")
             return None
@@ -71,7 +78,14 @@ class ImageMacroSystem:
     def get_screenshot(self, game_window):
         try:
             self.log_message("Capturing screenshot...")
-            screenshot = pyautogui.screenshot(region=(game_window.left, game_window.top, game_window.width, game_window.height))
+            screenshot = pyautogui.screenshot(
+                region=(
+                    game_window.left,
+                    game_window.top,
+                    game_window.width,
+                    game_window.height,
+                )
+            )
             screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
             self.log_message("Screenshot captured successfully.")
             return screenshot
@@ -79,11 +93,12 @@ class ImageMacroSystem:
             self.log_message(f"Error capturing screenshot: {str(e)}", "ERROR")
             return None
 
+
 # --- Main Application ---
 class AutoBotApp:
     def __init__(self, root):
         self.root = root
-        self.root.geometry("480x700")  # Adjusted for vertical layout
+        self.root.geometry("510x700")  # Adjusted for vertical layout
         self.running = threading.Event()  # Use threading.Event for thread safety
         self.recording = False
         self.preview_running = False
@@ -96,167 +111,25 @@ class AutoBotApp:
         self.loaded_macros = {}
         self.record_start_time = None
         self.playback_speed = 1.0
-        self.roi_start = None
-        self.roi_end = None
-        self.roi_rect = None
-        self.setup_ui()
+
+        # Add ROI-related attributes
+        self.roi_start = None  # Start point of ROI selection
+        self.roi_end = None  # End point of ROI selection
+        self.roi_rect = None  # Tkinter rectangle object for drawing the ROI
+        self.selected_roi = None  # Stores the final ROI coordinates
+
+        setup_ui(self)
         self.load_config()
         self.update_window_list()
+        self.resource_rois = {
+            "food": None,  # Example: ROI for food tracking
+            "wood": None,  # Example: ROI for wood tracking
+        }
+        self.tracked_values = {
+            "food": None,
+            "wood": None,
+        }
         # self.root.after(1000, self.check_game_status)
-
-    def setup_ui(self):
-        self.root.title("DLS macros")
-        self.root.rowconfigure(0, weight=1)
-        self.root.columnconfigure(0, weight=1)
-
-        # Main Frame
-        main_frame = ttk.Frame(self.root, padding=5)
-        main_frame.grid(row=0, column=0, sticky="nsew")
-        main_frame.rowconfigure(0, weight=1)
-        main_frame.rowconfigure(1, weight=0)  # Logs section
-        main_frame.columnconfigure(0, weight=1)
-
-        # Notebook for Tabs (Automation, Configuration, About)
-        self.notebook = ttk.Notebook(main_frame)
-        self.notebook.grid(row=0, column=0, sticky="nsew")
-
-        # Automation Tab
-        self.automation_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.automation_tab, text="Automation")
-
-        # Configuration Tab
-        self.config_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.config_tab, text="Configuration")
-
-        # About Tab
-        self.about_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.about_tab, text="About")
-
-        # Logs Frame (Below the Notebook)
-        logs_frame = ttk.LabelFrame(main_frame, text="Activity Log", padding=5)
-        logs_frame.grid(row=1, column=0, sticky="nsew", pady=5)
-        logs_frame.rowconfigure(0, weight=1)
-        logs_frame.columnconfigure(0, weight=1)
-
-        # Scrollable Log Text Area
-        log_container = ttk.Frame(logs_frame)
-        log_container.grid(row=0, column=0, sticky="nsew")
-        log_container.rowconfigure(0, weight=1)
-        log_container.columnconfigure(0, weight=1)
-
-        self.log_text = tk.Text(log_container, wrap=tk.WORD, state=tk.DISABLED, height=10)  # Limit height
-        self.log_text.grid(row=0, column=0, sticky="nsew")
-
-        # Vertical Scrollbar
-        log_scrollbar = ttk.Scrollbar(log_container, orient=tk.VERTICAL, command=self.log_text.yview)
-        log_scrollbar.grid(row=0, column=1, sticky="ns")
-        self.log_text.config(yscrollcommand=log_scrollbar.set)
-
-        # Log Controls
-        log_controls = ttk.Frame(logs_frame)
-        log_controls.grid(row=1, column=0, pady=5)
-        ttk.Button(log_controls, text="Clear Log", command=self.clear_log).grid(row=0, column=0, padx=5)
-        ttk.Button(log_controls, text="Save Log", command=self.save_log).grid(row=0, column=1, padx=5)
-
-        # --- Automation Tab Layout ---
-        top_frame = ttk.Frame(self.automation_tab, padding=5)
-        top_frame.grid(row=0, column=0, sticky="ew")
-        top_frame.columnconfigure(1, weight=1)
-        ttk.Label(top_frame, text="Select Game Window:").grid(row=0, column=0, sticky="w")
-        self.window_list = ttk.Combobox(top_frame)
-        self.window_list.grid(row=0, column=1, sticky="ew", padx=5)
-        self.window_list.bind("<<ComboboxSelected>>", self.on_window_select)
-        ttk.Button(top_frame, text="Refresh", command=self.update_window_list).grid(row=0, column=2, padx=5)
-
-        preview_frame = ttk.LabelFrame(self.automation_tab, text="Game Preview", padding=5)
-        preview_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        preview_frame.rowconfigure(0, weight=1)
-        preview_frame.columnconfigure(0, weight=1)
-        self.preview_label = ttk.Label(preview_frame)
-        self.preview_label.grid(row=0, column=0, sticky="nsew")
-        preview_controls = ttk.Frame(preview_frame)
-        preview_controls.grid(row=1, column=0, pady=5)
-        self.preview_btn = ttk.Button(preview_controls, text="Start Preview", command=self.toggle_preview)
-        self.preview_btn.grid(row=0, column=0, padx=5)
-        ttk.Button(preview_controls, text="Load Templates", command=self.load_templates).grid(row=0, column=1, padx=5)
-
-        # automation_ctrl_frame = ttk.LabelFrame(self.automation_tab, text="Automation Controls", padding=5)
-        # automation_ctrl_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
-        # automation_ctrl_frame.columnconfigure(0, weight=1)
-        # self.start_btn = ttk.Button(automation_ctrl_frame, text="Start Automation", command=None)
-        # self.start_btn.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-
-        macro_frame = ttk.LabelFrame(self.automation_tab, text="Macro Controls", padding=5)
-        macro_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
-        self.record_btn = ttk.Button(macro_frame, text="Record Macro", command=self.toggle_recording)
-        self.record_btn.grid(row=0, column=0, padx=5, pady=5)
-        self.play_btn = ttk.Button(macro_frame, text="Play Macro", command=self.play_macro)
-        self.play_btn.grid(row=0, column=1, padx=5, pady=5)
-        self.save_macro_btn = ttk.Button(macro_frame, text="Save Macro", command=self.save_macro_to_file)
-        self.save_macro_btn.grid(row=0, column=2, padx=5, pady=5)
-        self.load_macro_btn = ttk.Button(macro_frame, text="Load Macro", command=self.load_macro_from_file)
-        self.load_macro_btn.grid(row=0, column=3, padx=5, pady=5)
-
-        speed_frame = ttk.Frame(macro_frame)
-        speed_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=5)
-        ttk.Label(speed_frame, text="Playback Speed:").grid(row=0, column=0, sticky="w")
-        self.speed_slider = ttk.Scale(speed_frame, from_=0.5, to=3.0, orient=tk.HORIZONTAL, command=self.update_playback_speed)
-        self.speed_slider.set(1.0)
-        self.speed_slider.grid(row=0, column=1, sticky="ew", padx=5)
-        speed_frame.columnconfigure(1, weight=1)
-
-        lib_frame = ttk.Frame(macro_frame)
-        lib_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=5)
-        ttk.Label(lib_frame, text="Macro Library:").grid(row=0, column=0, sticky="w")
-        self.macro_listbox = tk.Listbox(lib_frame, height=4)
-        self.macro_listbox.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5)
-        lib_frame.columnconfigure(1, weight=1)
-        ttk.Label(macro_frame, text="(Select a macro from the list to play it.)").grid(
-            row=3, column=0, columnspan=4, sticky="w", padx=5
-        )
-
-        # --- Configuration Tab Layout ---
-        config_frame = ttk.LabelFrame(self.config_tab, text="Image Templates", padding=5)
-        config_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        self.template_list = tk.Listbox(config_frame, height=8)
-        self.template_list.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        config_btn_frame = ttk.Frame(config_frame)
-        config_btn_frame.grid(row=1, column=0, sticky="ew", pady=5)
-        ttk.Button(config_btn_frame, text="Remove Selected", command=self.remove_template).grid(row=0, column=0, padx=5)
-
-        ocr_frame = ttk.LabelFrame(self.config_tab, text="OCR Settings", padding=5)
-        ocr_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
-        ttk.Label(ocr_frame, text="Tesseract Path:").grid(row=0, column=0, sticky="w")
-        self.tesseract_entry = ttk.Entry(ocr_frame)
-        self.tesseract_entry.grid(row=0, column=1, sticky="ew", padx=5)
-        ocr_frame.columnconfigure(1, weight=1)
-
-        # --- About Tab Layout ---
-        about_frame = ttk.Frame(self.about_tab, padding=5)
-        about_frame.grid(row=0, column=0, sticky="nsew")
-        about_frame.rowconfigure(0, weight=1)
-        about_frame.columnconfigure(0, weight=1)
-
-        try:
-            banner_image = Image.open("assets/banner.png")
-            banner_image.thumbnail((780, 200))  # Resize to fit the window
-            self.banner_photo = ImageTk.PhotoImage(banner_image)
-            banner_label = ttk.Label(about_frame, image=self.banner_photo)
-            banner_label.grid(row=0, column=0, pady=10)
-        except FileNotFoundError:
-            ttk.Label(about_frame, text="Banner image not found.", font=("Arial", 12)).grid(
-                row=0, column=0, pady=10
-            )
-
-        about_text = (
-            "DLS macros\n"
-            "Version 0.0.1 (test)\n"
-            "A Python-based automation tool for doomsday last survivors.\n"
-            "For Update, visit our GitHub repository."
-        )
-        ttk.Label(about_frame, text=about_text, justify="center", font=("Arial", 10)).grid(
-            row=1, column=0, pady=10
-        )
 
     def update_playback_speed(self, value):
         try:
@@ -318,7 +191,9 @@ class AutoBotApp:
             self.log_message("No game window selected for preview", "ERROR")
             return
         self.preview_running = not self.preview_running
-        self.preview_btn.config(text="Stop Preview" if self.preview_running else "Start Preview")
+        self.preview_btn.config(
+            text="Stop Preview" if self.preview_running else "Start Preview"
+        )
         if self.preview_running:
             threading.Thread(target=self.update_preview, daemon=True).start()
 
@@ -329,44 +204,28 @@ class AutoBotApp:
 
     def capture_preview(self):
         """
-        Captures the game window screenshot, performs OCR, and displays the annotated image in the preview.
+        Captures the game window screenshot and displays it on the Canvas.
         """
         window = self.get_selected_window()
         if window:
             try:
-                # Step 1: Capture the game window screenshot
-                img = pyautogui.screenshot(region=(window.left, window.top, window.width, window.height))
-                img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-                pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-                # Step 2: Perform OCR with Tesseract
-                if pytesseract:
-                    # Ensure Tesseract path is set (if not already configured)
-                    tesseract_path = self.tesseract_entry.get().strip()
-                    if tesseract_path:
-                        pytesseract.pytesseract.tesseract_cmd = tesseract_path
+                # Capture the full game window screenshot
+                img = pyautogui.screenshot(
+                    region=(window.left, window.top, window.width, window.height)
+                )
 
-                    # Use pytesseract.image_to_data to get bounding boxes for detected text
-                    data = pytesseract.image_to_data(img_cv, output_type=pytesseract.Output.DICT)
-                    n_boxes = len(data['text'])
+                # Scale down the image for preview
+                img.thumbnail((400, 200))
+                self.preview_image = ImageTk.PhotoImage(img)
 
-                    # Step 3: Draw rectangles around detected text
-                    for i in range(n_boxes):
-                        if int(data['conf'][i]) > 60:  # Confidence threshold
-                            x, y, w, h = (
-                                data['left'][i],
-                                data['top'][i],
-                                data['width'][i],
-                                data['height'][i],
-                            )
-                            cv2.rectangle(img_cv, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Green box
-
-                # Step 4: Convert the annotated image back to PIL format
-                img_annotated = Image.fromarray(cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB))
-                img_annotated.thumbnail((800, 600))  # Resize to fit the preview
-
-                # Step 5: Display the annotated image in the preview label
-                self.preview_image = ImageTk.PhotoImage(img_annotated)
-                self.preview_label.config(image=self.preview_image)
+                # Clear the Canvas and display the new image
+                self.preview_canvas.delete("all")  # Clear previous content
+                self.preview_canvas.config(
+                    width=img.width, height=img.height
+                )  # Adjust Canvas size
+                self.preview_canvas.create_image(
+                    0, 0, anchor=tk.NW, image=self.preview_image
+                )  # Display image
 
             except Exception as e:
                 self.log_message(f"Preview error: {str(e)}", "ERROR")
@@ -383,18 +242,25 @@ class AutoBotApp:
 
         # Check if the folder exists
         if not os.path.exists(templates_folder):
-            self.log_message("Templates folder not found. Please create a 'templates/' folder and add your template images.", "ERROR")
+            self.log_message(
+                "Templates folder not found. Please create a 'templates/' folder and add your template images.",
+                "ERROR",
+            )
             return
 
         # Get all supported image files in the folder
         supported_extensions = [".png", ".jpg", ".jpeg"]
         template_files = [
-            f for f in os.listdir(templates_folder)
-            if os.path.isfile(os.path.join(templates_folder, f)) and os.path.splitext(f)[1].lower() in supported_extensions
+            f
+            for f in os.listdir(templates_folder)
+            if os.path.isfile(os.path.join(templates_folder, f))
+            and os.path.splitext(f)[1].lower() in supported_extensions
         ]
 
         if not template_files:
-            self.log_message("No template images found in the 'templates/' folder.", "ERROR")
+            self.log_message(
+                "No template images found in the 'templates/' folder.", "ERROR"
+            )
             return
 
         # Load each template image
@@ -406,7 +272,10 @@ class AutoBotApp:
                 # Attempt to load the image using OpenCV
                 template = cv2.imread(file_path)
                 if template is None:
-                    self.log_message(f"Failed to load template: {file} (invalid file or format)", "ERROR")
+                    self.log_message(
+                        f"Failed to load template: {file} (invalid file or format)",
+                        "ERROR",
+                    )
                     continue
                 # Store the template in the dictionary with its normalized name
                 self.templates[name] = template
@@ -465,7 +334,9 @@ class AutoBotApp:
             }
             self.recorded_macro.append(event)
 
-        self.k_listener = pynput_keyboard.Listener(on_press=on_press, on_release=on_release)
+        self.k_listener = pynput_keyboard.Listener(
+            on_press=on_press, on_release=on_release
+        )
         self.m_listener = mouse.Listener(on_click=on_click, on_scroll=on_scroll)
         self.k_listener.start()
         self.m_listener.start()
@@ -478,7 +349,9 @@ class AutoBotApp:
         if self.m_listener:
             self.m_listener.stop()
             self.m_listener = None
-        self.log_message(f"Macro recording stopped. {len(self.recorded_macro)} events recorded.")
+        self.log_message(
+            f"Macro recording stopped. {len(self.recorded_macro)} events recorded."
+        )
 
     def toggle_recording(self):
         self.recording = not self.recording
@@ -501,10 +374,14 @@ class AutoBotApp:
             events = self.recorded_macro
             macro_name = "Current Recorded Macro"
         else:
-            self.log_message("No macro available. Please record or load a macro.", "ERROR")
+            self.log_message(
+                "No macro available. Please record or load a macro.", "ERROR"
+            )
             return
         self.log_message(f"Starting playback of macro: {macro_name}")
-        threading.Thread(target=self._play_macro_thread, args=(events,), daemon=True).start()
+        threading.Thread(
+            target=self._play_macro_thread, args=(events,), daemon=True
+        ).start()
 
     def _play_macro_thread(self, events):
         kb = KeyboardController()
@@ -521,13 +398,17 @@ class AutoBotApp:
                 try:
                     kb.press(key_val)
                 except Exception as e:
-                    self.log_message(f"Error playing key press {event['key']}: {e}", "ERROR")
+                    self.log_message(
+                        f"Error playing key press {event['key']}: {e}", "ERROR"
+                    )
             elif etype == "key_release":
                 key_val = convert_key_str(event["key"])
                 try:
                     kb.release(key_val)
                 except Exception as e:
-                    self.log_message(f"Error playing key release {event['key']}: {e}", "ERROR")
+                    self.log_message(
+                        f"Error playing key release {event['key']}: {e}", "ERROR"
+                    )
             elif etype == "mouse_click":
                 x, y = event["x"], event["y"]
                 button_str = event["button"]
@@ -580,6 +461,133 @@ class AutoBotApp:
                 self.log_message(f"Macro {macro_name} loaded.")
             except Exception as e:
                 self.log_message(f"Error loading macro: {e}", "ERROR")
+
+    def start_roi_selection(self, event):
+        """Start selecting the ROI."""
+        self.roi_start = (event.x, event.y)
+        self.roi_rect = None
+
+    def update_roi_selection(self, event):
+        """
+        Update the ROI rectangle as the user drags the mouse.
+        """
+        if self.roi_start:
+            x1, y1 = self.roi_start
+            x2, y2 = event.x, event.y
+            if self.roi_rect:
+                self.roi_canvas.delete(self.roi_rect)  # Clear previous rectangle
+            self.roi_rect = self.roi_canvas.create_rectangle(
+                x1, y1, x2, y2, outline="red", width=2
+            )
+
+    def end_roi_selection(self, event):
+        """
+        Finalize the ROI selection and validate its dimensions.
+        """
+        if self.roi_start:
+            self.roi_end = (event.x, event.y)
+            x1, y1 = self.roi_start
+            x2, y2 = self.roi_end
+            # Normalize coordinates to ensure top-left and bottom-right
+            roi_x1, roi_y1 = min(x1, x2), min(y1, y2)
+            roi_x2, roi_y2 = max(x1, x2), max(y1, y2)
+
+            # Check if the ROI is too small
+            if (
+                roi_x2 - roi_x1 <= 10 or roi_y2 - roi_y1 <= 10
+            ):  # Arbitrary threshold for "too small"
+                self.log_message(
+                    "Selected ROI is too small. Please try again.", "WARNING"
+                )
+                self.roi_start = None
+                self.roi_end = None
+                return
+
+            # Store the selected ROI
+            self.selected_roi = (roi_x1, roi_y1, roi_x2, roi_y2)
+            self.log_message(
+                f"Selected ROI: ({roi_x1}, {roi_y1}) -> ({roi_x2}, {roi_y2})"
+            )
+
+            # Prompt user to associate the ROI with a resource
+            resource = simpledialog.askstring(
+                "Resource Selection", "Enter resource name (e.g., food, wood):"
+            )
+            if resource:
+                self.resource_rois[resource.lower()] = (roi_x1, roi_y1, roi_x2, roi_y2)
+                self.log_message(
+                    f"ROI for '{resource}' set: ({roi_x1}, {roi_y1}) -> ({roi_x2}, {roi_y2})"
+                )
+            else:
+                self.log_message("ROI selection canceled.")
+
+            self.roi_start = None
+            self.roi_end = None
+
+    def show_roi_popup(self):
+        """
+        Show a popup window for ROI selection with a frozen preview.
+        """
+        if not self.game_window:
+            self.log_message("No game window selected for ROI selection.", "ERROR")
+            return
+
+        # Capture the game window screenshot
+        img = pyautogui.screenshot(
+            region=(
+                self.game_window.left,
+                self.game_window.top,
+                self.game_window.width,
+                self.game_window.height,
+            )
+        )
+        img.thumbnail((800, 600))  # Scale down the preview to fit the popup window
+
+        # Create a popup window
+        self.roi_popup = tk.Toplevel(self.root)
+        self.roi_popup.title("ROI Selection")
+        self.roi_popup.geometry("800x600")  # Set the size of the popup
+        self.roi_popup.resizable(False, False)
+
+        # Center the popup window on the screen
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = (screen_width - 800) // 2
+        y = (screen_height - 600) // 2
+        self.roi_popup.geometry(f"+{x}+{y}")
+
+        # Add a Canvas for the preview
+        self.roi_canvas = tk.Canvas(self.roi_popup, bg="gray", width=800, height=600)
+        self.roi_canvas.pack(fill=tk.BOTH, expand=True)
+
+        # Display the frozen preview image
+        self.roi_preview_image = ImageTk.PhotoImage(img)
+        self.roi_canvas.create_image(0, 0, anchor=tk.NW, image=self.roi_preview_image)
+
+        # Bind mouse events for ROI selection
+        self.roi_canvas.bind("<ButtonPress-1>", self.start_roi_selection)
+        self.roi_canvas.bind("<B1-Motion>", self.update_roi_selection)
+        self.roi_canvas.bind("<ButtonRelease-1>", self.end_roi_selection)
+
+        # Add a Reset ROI button
+        reset_button = ttk.Button(
+            self.roi_popup, text="Reset ROI", command=self.reset_roi
+        )
+        reset_button.pack(pady=5)
+
+        # Add a Done button to close the popup
+        done_button = ttk.Button(
+            self.roi_popup, text="Done", command=self.roi_popup.destroy
+        )
+        done_button.pack(pady=5)
+
+    def reset_roi(self):
+        """Reset the selected ROI."""
+        self.selected_roi = None
+        self.roi_start = None
+        self.roi_end = None
+        self.preview_canvas.delete("all")  # Clear the Canvas
+        self.log_message("ROI selection reset.")
 
     # def check_game_status(self):
     #     if self.game_window and not self.game_window.isActive:
