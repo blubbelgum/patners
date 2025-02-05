@@ -215,7 +215,7 @@ class AutoBotApp:
                 )
 
                 # Scale down the image for preview
-                img.thumbnail((400, 200))
+                img.thumbnail((460, 320))
                 self.preview_image = ImageTk.PhotoImage(img)
 
                 # Clear the Canvas and display the new image
@@ -497,17 +497,35 @@ class AutoBotApp:
                 roi_x2 - roi_x1 <= 10 or roi_y2 - roi_y1 <= 10
             ):  # Arbitrary threshold for "too small"
                 self.log_message(
-                    "Selected ROI is too small. Please try again.", "WARNING"
+                    "Selected ROI is too small. Using the entire game window.",
+                    "WARNING",
                 )
-                self.roi_start = None
-                self.roi_end = None
-                return
+                self.selected_roi = None
+            else:
+                self.selected_roi = (roi_x1, roi_y1, roi_x2, roi_y2)
+                self.log_message(
+                    f"Selected ROI: ({roi_x1}, {roi_y1}) -> ({roi_x2}, {roi_y2})"
+                )
 
-            # Store the selected ROI
-            self.selected_roi = (roi_x1, roi_y1, roi_x2, roi_y2)
-            self.log_message(
-                f"Selected ROI: ({roi_x1}, {roi_y1}) -> ({roi_x2}, {roi_y2})"
-            )
+                # Capture and display the cropped ROI image
+                window = self.get_selected_window()
+                if window:
+                    try:
+                        img = pyautogui.screenshot(
+                            region=(
+                                window.left + roi_x1,
+                                window.top + roi_y1,
+                                roi_x2 - roi_x1,
+                                roi_y2 - roi_y1,
+                            )
+                        )
+                        img.thumbnail((480, 480))  # Resize for display
+                        self.roi_image = ImageTk.PhotoImage(img)
+                        self.roi_display_label.config(image=self.roi_image)
+                    except Exception as e:
+                        self.log_message(
+                            f"Error capturing ROI image: {str(e)}", "ERROR"
+                        )
 
             # Prompt user to associate the ROI with a resource
             resource = simpledialog.askstring(
@@ -541,7 +559,9 @@ class AutoBotApp:
                 self.game_window.height,
             )
         )
-        img.thumbnail((800, 600))  # Scale down the preview to fit the popup window
+        # TODO: make this more dynamic later.
+        # for now we just following the game window size
+        img.thumbnail((1280, 720))  # Scale down the preview to fit the popup window
 
         # Create a popup window
         self.roi_popup = tk.Toplevel(self.root)

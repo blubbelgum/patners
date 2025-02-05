@@ -118,7 +118,7 @@ def setup_ui(self):
         preview_controls, text="Load Templates", command=self.load_templates
     ).grid(row=0, column=1, padx=5)
 
-    # Add a button to reset ROI
+    # ROI BUTTONs
     ttk.Button(preview_controls, text="Select ROI", command=self.show_roi_popup).grid(
         row=0, column=3, padx=5
     )
@@ -126,18 +126,28 @@ def setup_ui(self):
         row=0, column=2, padx=5
     )
 
+    # ROI Display Frame
+    roi_display_frame = ttk.LabelFrame(
+        self.automation_tab, text="Selected ROI", padding=5
+    )
+    roi_display_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+    roi_display_frame.rowconfigure(0, weight=1)
+    roi_display_frame.columnconfigure(0, weight=1)
+    self.roi_display_label = ttk.Label(roi_display_frame)
+    self.roi_display_label.grid(row=0, column=0, sticky="nsew")
+
     # Bind mouse events AFTER creating the preview_label
     self.preview_canvas.bind("<ButtonPress-1>", self.start_roi_selection)
     self.preview_canvas.bind("<B1-Motion>", self.update_roi_selection)
     self.preview_canvas.bind("<ButtonRelease-1>", self.end_roi_selection)
 
-    # Magnifier Frame
-    magnifier_frame = ttk.LabelFrame(self.automation_tab, text="Magnifier", padding=5)
-    magnifier_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
-    magnifier_frame.rowconfigure(0, weight=1)
-    magnifier_frame.columnconfigure(0, weight=1)
-    self.magnifier_label = ttk.Label(magnifier_frame)
-    self.magnifier_label.grid(row=0, column=0, sticky="nsew")
+    # # Magnifier Frame
+    # magnifier_frame = ttk.LabelFrame(self.automation_tab, text="Magnifier", padding=5)
+    # magnifier_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+    # magnifier_frame.rowconfigure(0, weight=1)
+    # magnifier_frame.columnconfigure(0, weight=1)
+    # self.magnifier_label = ttk.Label(magnifier_frame)
+    # self.magnifier_label.grid(row=0, column=0, sticky="nsew")
 
     # automation_ctrl_frame = ttk.LabelFrame(self.automation_tab, text="Automation Controls", padding=5)
     # automation_ctrl_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
