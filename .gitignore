@@ -1,0 +1,7 @@
+templates/
+logs/
+build/
+dist/
+.vscode/
+main.spec/
+llm.txt
