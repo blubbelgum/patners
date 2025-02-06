@@ -105,7 +105,7 @@ def setup_ui(self):
     preview_frame.columnconfigure(0, weight=1)
     # Replace Label with Canvas for ROI drawing
     self.preview_canvas = tk.Canvas(
-        preview_frame, bg="white", height=200, width=400
+        preview_frame, bg="white", height=0, width=0
     )  # Use Canvas instead of Label
     self.preview_canvas.grid(row=0, column=0, sticky="nsew")
     preview_controls = ttk.Frame(preview_frame)
@@ -135,11 +135,6 @@ def setup_ui(self):
     roi_display_frame.columnconfigure(0, weight=1)
     self.roi_display_label = ttk.Label(roi_display_frame)
     self.roi_display_label.grid(row=0, column=0, sticky="nsew")
-
-    # Bind mouse events AFTER creating the preview_label
-    self.preview_canvas.bind("<ButtonPress-1>", self.start_roi_selection)
-    self.preview_canvas.bind("<B1-Motion>", self.update_roi_selection)
-    self.preview_canvas.bind("<ButtonRelease-1>", self.end_roi_selection)
 
     # # Magnifier Frame
     # magnifier_frame = ttk.LabelFrame(self.automation_tab, text="Magnifier", padding=5)
