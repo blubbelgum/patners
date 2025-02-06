@@ -349,6 +349,17 @@ class AutoBotApp:
             self.recorded_macro.append(event)
 
         def on_click(x, y, button, pressed):
+            # Ignore clicks within the application window
+            app_window = gw.getWindowsWithTitle(self.root.title())
+            if app_window:
+                app_window = app_window[0]
+                if (
+                    app_window.left <= x <= app_window.left + app_window.width
+                    and app_window.top <= y <= app_window.top + app_window.height
+                ):
+                    return  # Ignore clicks within the app window
+
+            # Record valid clicks
             event = {
                 "type": "mouse_click",
                 "x": x,
