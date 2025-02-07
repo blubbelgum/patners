@@ -104,6 +104,8 @@ class AutoBotApp:
         self.preview_running = False
         self.game_window = None
         self.templates = {}
+
+        # Macro Controls
         self.macro_system = None
         self.k_listener = None
         self.m_listener = None
@@ -431,50 +433,57 @@ class AutoBotApp:
         ).start()
 
     def _play_macro_thread(self, events):
+        """
+        Play a macro with optional repetitions.
+        """
         kb = KeyboardController()
-        last_time = 0
-        for event in events:
-            delay = event["time"] - last_time
-            if delay > 0:
-                # Adjust delay based on playback speed multiplier.
-                time.sleep(delay / self.playback_speed)
-            last_time = event["time"]
-            etype = event["type"]
-            if etype == "key_press":
-                key_val = convert_key_str(event["key"])
-                try:
-                    kb.press(key_val)
-                except Exception as e:
-                    self.log_message(
-                        f"Error playing key press {event['key']}: {e}", "ERROR"
+        try:
+            repeat_count = int(self.repeat_count.get())
+        except ValueError:
+            repeat_count = 1
+
+        for _ in range(repeat_count):
+            last_time = 0
+            for event in events:
+                delay = event["time"] - last_time
+                if delay > 0:
+                    time.sleep(delay / self.playback_speed)
+                last_time = event["time"]
+
+                etype = event["type"]
+                if etype == "key_press":
+                    key_val = convert_key_str(event["key"])
+                    try:
+                        kb.press(key_val)
+                    except Exception as e:
+                        self.log_message(
+                            f"Error playing key press {event['key']}: {e}", "ERROR"
+                        )
+                elif etype == "key_release":
+                    key_val = convert_key_str(event["key"])
+                    try:
+                        kb.release(key_val)
+                    except Exception as e:
+                        self.log_message(
+                            f"Error playing key release {event['key']}: {e}", "ERROR"
+                        )
+                elif etype == "mouse_click":
+                    x, y = event["x"], event["y"]
+                    button_str = event["button"]
+                    button = (
+                        "left"
+                        if "left" in button_str
+                        else "right" if "right" in button_str else "middle"
                     )
-            elif etype == "key_release":
-                key_val = convert_key_str(event["key"])
-                try:
-                    kb.release(key_val)
-                except Exception as e:
-                    self.log_message(
-                        f"Error playing key release {event['key']}: {e}", "ERROR"
-                    )
-            elif etype == "mouse_click":
-                x, y = event["x"], event["y"]
-                button_str = event["button"]
-                if "left" in button_str:
-                    button = "left"
-                elif "right" in button_str:
-                    button = "right"
-                elif "middle" in button_str:
-                    button = "middle"
-                else:
-                    button = "left"
-                if event["pressed"]:
-                    pyautogui.mouseDown(x=x, y=y, button=button)
-                else:
-                    pyautogui.mouseUp(x=x, y=y, button=button)
-            elif etype == "mouse_scroll":
-                dy = event["dy"]
-                pyautogui.scroll(dy)
-        self.log_message("Macro playback finished.")
+                    if event["pressed"]:
+                        pyautogui.mouseDown(x=x, y=y, button=button)
+                    else:
+                        pyautogui.mouseUp(x=x, y=y, button=button)
+                elif etype == "mouse_scroll":
+                    dy = event["dy"]
+                    pyautogui.scroll(dy)
+
+            self.log_message(f"Macro repetition {_ + 1}/{repeat_count} completed.")
 
     def save_macro_to_file(self):
         if not self.recorded_macro:
@@ -508,6 +517,28 @@ class AutoBotApp:
                 self.log_message(f"Macro {macro_name} loaded.")
             except Exception as e:
                 self.log_message(f"Error loading macro: {e}", "ERROR")
+
+    def conditional_play_macro(self, events):
+        """
+        Play a macro with conditional execution based on screen content.
+        """
+        for event in events:
+            if event.get("condition"):
+                template_name = event["condition"].get("template")
+                text_pattern = event["condition"].get("text")
+
+                screenshot = self.macro_system.get_screenshot(self.game_window)
+                if template_name and not self.macro_system.detect_template(
+                    screenshot, template_name
+                ):
+                    continue  # Skip this action if the template is not found
+                if text_pattern and not self.macro_system.detect_text(
+                    screenshot, text_pattern
+                ):
+                    continue  # Skip this action if the text pattern is not found
+
+            # Execute the action
+            self._execute_macro_event(event)
 
     def start_roi_selection(self, event):
         """Start selecting the ROI."""

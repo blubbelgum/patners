@@ -167,6 +167,15 @@ def setup_ui(self):
     )
     self.load_macro_btn.grid(row=0, column=3, padx=5, pady=5)
 
+    # --- Macro Controls ---
+    repeat_frame = ttk.Frame(macro_frame)
+    repeat_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=5)
+    ttk.Label(repeat_frame, text="Repeat Macro:").grid(row=0, column=0, sticky="w")
+    self.repeat_count = ttk.Entry(repeat_frame)
+    self.repeat_count.insert(0, "1")  # Default to 1 repetition
+    self.repeat_count.grid(row=0, column=1, sticky="ew", padx=5)
+    repeat_frame.columnconfigure(1, weight=1)
+
     speed_frame = ttk.Frame(macro_frame)
     speed_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=5)
     ttk.Label(speed_frame, text="Playback Speed:").grid(row=0, column=0, sticky="w")
