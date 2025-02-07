@@ -44,41 +44,29 @@ def convert_key_str(key_str):
 class ImageMacroSystem:
     def __init__(self, templates, log_message):
         self.templates = templates
-        self.attempts = 0
         self.log_message = log_message
 
-    def execute(self, game_window):
-        return None
+    def detect_template(self, game_window, template_name):
+        template = self.templates.get(template_name)
+        if not template:
+            return False
+        screenshot = self.get_screenshot(game_window)
+        result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+        return np.max(result) > 0.8
 
-    def detect_text(self, image, pattern):
-        pytesseract.pytesseract.tesseract_cmd = (
-            r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-        )
+    def detect_text(self, game_window, pattern):
         if pytesseract is None:
             self.log_message("Tesseract OCR is not available.", "ERROR")
             return None
-        try:
-            gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
-            text = pytesseract.image_to_string(gray)
-            if not text.strip():  # Check if the extracted text is empty
-                self.log_message("No text detected in the image.", "INFO")
-                return None
-            match = re.search(pattern, text)
-            if match:
-                self.log_message(
-                    f"Detected text matching pattern '{pattern}': {match.group()}"
-                )
-                return match.groups()
-            self.log_message(f"No text matching pattern '{pattern}' found.")
-            return None
-        except Exception as e:
-            self.log_message(f"Error during text detection: {str(e)}", "ERROR")
-            return None
+        screenshot = self.get_screenshot(game_window)
+        gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        text = pytesseract.image_to_string(gray)
+        match = re.search(pattern, text)
+        return match.groups() if match else None
 
     def get_screenshot(self, game_window):
         try:
-            self.log_message("Capturing screenshot...")
-            screenshot = pyautogui.screenshot(
+            img = pyautogui.screenshot(
                 region=(
                     game_window.left,
                     game_window.top,
@@ -86,9 +74,7 @@ class ImageMacroSystem:
                     game_window.height,
                 )
             )
-            screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
-            self.log_message("Screenshot captured successfully.")
-            return screenshot
+            return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         except Exception as e:
             self.log_message(f"Error capturing screenshot: {str(e)}", "ERROR")
             return None
@@ -221,7 +207,7 @@ class AutoBotApp:
             # Approximate title bar and border sizes
             # These values may need adjustment based on the operating system
             title_bar_height = 30  # Approximate height of the title bar
-            border_width = 8  # Approximate width of the borders
+            border_width = 4  # Approximate width of the borders
 
             # Adjust the region to exclude the title bar and borders
             client_left = left + border_width
@@ -629,22 +615,18 @@ class AutoBotApp:
             return
 
         # Capture the game window screenshot
-        img = pyautogui.screenshot(
-            region=(
-                self.game_window.left,
-                self.game_window.top,
-                self.game_window.width,
-                self.game_window.height,
-            )
+        # Get the client area dimensions (excluding title bar and borders)
+        client_left, client_top, client_width, client_height = self.get_client_area(
+            self.game_window
         )
-        # TODO: make this more dynamic later.
-        # for now we just following the game window size
-        img.thumbnail((1280, 720))  # Scale down the preview to fit the popup window
+        img = pyautogui.screenshot(
+            region=(client_left, client_top, client_width, client_height)
+        )
 
         # Create a popup window
         self.roi_popup = tk.Toplevel(self.root)
         self.roi_popup.title("ROI Selection")
-        self.roi_popup.geometry("800x600")  # Set the size of the popup
+        self.roi_popup.geometry("800x600")  # Set a fixed size for the popup
         self.roi_popup.resizable(False, False)
 
         # Center the popup window on the screen
@@ -658,7 +640,8 @@ class AutoBotApp:
         self.roi_canvas = tk.Canvas(self.roi_popup, bg="gray", width=800, height=600)
         self.roi_canvas.pack(fill=tk.BOTH, expand=True)
 
-        # Display the frozen preview image
+        # Scale down the image for preview
+        img.thumbnail((800, 600))
         self.roi_preview_image = ImageTk.PhotoImage(img)
         self.roi_canvas.create_image(0, 0, anchor=tk.NW, image=self.roi_preview_image)
 
@@ -684,7 +667,8 @@ class AutoBotApp:
         self.selected_roi = None
         self.roi_start = None
         self.roi_end = None
-        self.preview_canvas.delete("all")  # Clear the Canvas
+        self.roi_canvas.delete("all")  # Clear the Canvas
+        self.roi_canvas.create_image(0, 0, anchor=tk.NW, image=self.roi_preview_image)
         self.log_message("ROI selection reset.")
 
     # def check_game_status(self):
