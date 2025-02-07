@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageSequence
 
 
 def setup_ui(self):
@@ -225,11 +225,27 @@ def setup_ui(self):
     about_frame.columnconfigure(0, weight=1)
 
     try:
-        banner_image = Image.open("assets/banner.png")
-        banner_image.thumbnail((780, 200))  # Resize to fit the window
-        self.banner_photo = ImageTk.PhotoImage(banner_image)
-        banner_label = ttk.Label(about_frame, image=self.banner_photo)
-        banner_label.grid(row=0, column=0, pady=10)
+        banner_image = Image.open("assets/banner.gif")
+        self.frames = [
+            ImageTk.PhotoImage(
+                frame.convert("RGBA").resize(
+                    (200, int(200 * frame.height / frame.width))
+                )
+            )
+            for frame in ImageSequence.Iterator(banner_image)
+        ]
+        self.banner_label = ttk.Label(about_frame)
+        self.banner_label.grid(row=0, column=0, pady=10)
+
+        def animate(counter):
+            frame = self.frames[counter]
+            self.banner_label.configure(image=frame)
+            counter += 1
+            if counter == len(self.frames):
+                counter = 0
+            self.root.after(100, animate, counter)
+
+        animate(0)
     except FileNotFoundError:
         ttk.Label(about_frame, text="Banner image not found.", font=("Arial", 12)).grid(
             row=0, column=0, pady=10
@@ -244,3 +260,8 @@ def setup_ui(self):
     ttk.Label(about_frame, text=about_text, justify="center", font=("Arial", 10)).grid(
         row=1, column=0, pady=10
     )
+
+    # Center align the content
+    about_frame.grid_columnconfigure(0, weight=1)
+    about_frame.grid_rowconfigure(0, weight=1)
+    about_frame.grid_rowconfigure(1, weight=1)

@@ -170,7 +170,7 @@ class AutoBotApp:
         windows = [w.title for w in gw.getAllWindows() if w.title]
         self.window_list["values"] = windows
         if windows:
-            self.window_list.current(0)
+            self.window_list.set(windows[0])  # Use set method instead of current
             self.game_window = self.get_selected_window()
 
     def get_selected_window(self):
