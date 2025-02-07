@@ -200,6 +200,17 @@ def setup_ui(self):
         row=3, column=0, columnspan=4, sticky="w", padx=5
     )
 
+    # --- Delay Settings ---
+    delay_frame = ttk.Frame(macro_frame)
+    delay_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=5)
+    ttk.Label(delay_frame, text="Delay Between Actions (ms):").grid(
+        row=0, column=0, sticky="w"
+    )
+    self.delay_slider = ttk.Scale(delay_frame, from_=0, to=1000, orient=tk.HORIZONTAL)
+    self.delay_slider.set(200)  # Default delay of 200ms
+    self.delay_slider.grid(row=0, column=1, sticky="ew", padx=5)
+    delay_frame.columnconfigure(1, weight=1)
+
     # --- Configuration Tab Layout ---
     config_frame = ttk.LabelFrame(self.config_tab, text="Image Templates", padding=5)
     config_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)

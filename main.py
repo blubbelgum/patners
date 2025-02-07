@@ -423,6 +423,23 @@ class AutoBotApp:
         Play a macro with optional repetitions.
         """
         kb = KeyboardController()
+        delay_ms = int(self.delay_slider.get()) / 1000  # Convert ms to seconds
+
+        # Delay between macro events.
+        for event in events:
+            # Add delay before each action
+            time.sleep(delay_ms)
+
+            etype = event["type"]
+            if etype == "key_press":
+                key_val = convert_key_str(event["key"])
+                try:
+                    kb.press(key_val)
+                except Exception as e:
+                    self.log_message(
+                        f"Error playing key press {event['key']}: {e}", "ERROR"
+                    )
+
         try:
             repeat_count = int(self.repeat_count.get())
         except ValueError:
