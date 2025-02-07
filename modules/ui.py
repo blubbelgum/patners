@@ -167,15 +167,6 @@ def setup_ui(self):
     )
     self.load_macro_btn.grid(row=0, column=3, padx=5, pady=5)
 
-    # --- Macro Controls ---
-    repeat_frame = ttk.Frame(macro_frame)
-    repeat_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=5)
-    ttk.Label(repeat_frame, text="Repeat Macro:").grid(row=0, column=0, sticky="w")
-    self.repeat_count = ttk.Entry(repeat_frame)
-    self.repeat_count.insert(0, "1")  # Default to 1 repetition
-    self.repeat_count.grid(row=0, column=1, sticky="ew", padx=5)
-    repeat_frame.columnconfigure(1, weight=1)
-
     speed_frame = ttk.Frame(macro_frame)
     speed_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=5)
     ttk.Label(speed_frame, text="Playback Speed:").grid(row=0, column=0, sticky="w")
@@ -190,26 +181,35 @@ def setup_ui(self):
     self.speed_slider.grid(row=0, column=1, sticky="ew", padx=5)
     speed_frame.columnconfigure(1, weight=1)
 
+    # Repeat controls
+    repeat_frame = ttk.Frame(macro_frame)
+    repeat_frame.grid(
+        row=2, column=0, columnspan=4, sticky="ew", pady=5
+    )  # Place in row 2
+    ttk.Label(repeat_frame, text="Repeat:").grid(row=0, column=0, sticky="w")
+    self.repeat_count = ttk.Entry(repeat_frame, width=5)
+    self.repeat_count.insert(0, "1")
+    self.repeat_count.grid(row=0, column=1, sticky="w", padx=5)
+    self.repeat_infinite_var = tk.BooleanVar()
+    ttk.Checkbutton(
+        repeat_frame, text="Infinitely", variable=self.repeat_infinite_var
+    ).grid(row=0, column=2, sticky="w", padx=5)
+
+    # Macro Library Frame
     lib_frame = ttk.Frame(macro_frame)
-    lib_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=5)
+    lib_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=5)  # Move to row 3
     ttk.Label(lib_frame, text="Macro Library:").grid(row=0, column=0, sticky="w")
     self.macro_listbox = tk.Listbox(lib_frame, height=4)
     self.macro_listbox.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5)
     lib_frame.columnconfigure(1, weight=1)
-    ttk.Label(macro_frame, text="(Select a macro from the list to play it.)").grid(
-        row=3, column=0, columnspan=4, sticky="w", padx=5
-    )
 
-    # --- Delay Settings ---
-    delay_frame = ttk.Frame(macro_frame)
-    delay_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=5)
-    ttk.Label(delay_frame, text="Delay Between Actions (ms):").grid(
-        row=0, column=0, sticky="w"
+    ttk.Label(macro_frame, text="(Select a macro from the list to play it.)").grid(
+        row=4,
+        column=0,
+        columnspan=4,
+        sticky="w",
+        padx=5,  # Adjust row number accordingly
     )
-    self.delay_slider = ttk.Scale(delay_frame, from_=0, to=1000, orient=tk.HORIZONTAL)
-    self.delay_slider.set(200)  # Default delay of 200ms
-    self.delay_slider.grid(row=0, column=1, sticky="ew", padx=5)
-    delay_frame.columnconfigure(1, weight=1)
 
     # --- Configuration Tab Layout ---
     config_frame = ttk.LabelFrame(self.config_tab, text="Image Templates", padding=5)

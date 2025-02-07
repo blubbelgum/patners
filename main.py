@@ -8,7 +8,7 @@ import random
 import pygetwindow as gw
 import cv2
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageSequence
 import threading
 from pynput import mouse, keyboard as pynput_keyboard
 from pynput.keyboard import Key, Controller as KeyboardController
@@ -119,6 +119,66 @@ class AutoBotApp:
         }
         # self.root.after(1000, self.check_game_status)
 
+    def show_splash_screen(self, macro_name):
+        """
+        Show the splash screen with a GIF and log information.
+        """
+        # Hide all other widgets
+        for widget in self.root.winfo_children():
+            widget.grid_forget()
+
+        # Create the splash screen frame
+        splash_frame = ttk.Frame(self.root, padding=20)
+        splash_frame.grid(row=0, column=0, sticky="nsew")
+        splash_frame.rowconfigure(0, weight=1)
+        splash_frame.columnconfigure(0, weight=1)
+
+        # Add GIF animation
+        gif_path = "assets/loading.gif"  # Replace with your GIF path
+        try:
+            gif = Image.open(gif_path)
+            frames = frames = [
+                ImageTk.PhotoImage(
+                    frame.convert("RGBA").resize(
+                        (200, int(200 * frame.height / frame.width))
+                    )
+                )
+                for frame in ImageSequence.Iterator(gif)
+            ]
+            self.gif_label = ttk.Label(splash_frame)
+            self.gif_label.grid(row=0, column=0, pady=20)
+            self.animate_gif(frames, 0)
+        except FileNotFoundError:
+            ttk.Label(splash_frame, text="GIF not found.", font=("Arial", 16)).grid(
+                row=0, column=0, pady=20
+            )
+
+        # Add centered text for the macro name and latest log
+        ttk.Label(
+            splash_frame, text=f"Running Macro: {macro_name}", font=("Arial", 12)
+        ).grid(row=1, column=0, pady=10)
+        self.splash_log_label = ttk.Label(
+            splash_frame, text="Latest Log: Waiting...", font=("Arial", 10)
+        )
+        self.splash_log_label.grid(row=2, column=0, pady=10)
+
+    def animate_gif(self, frames, index):
+        """
+        Animate the GIF by cycling through its frames.
+        """
+        self.gif_label.config(image=frames[index])
+        self.root.after(
+            100, lambda: self.animate_gif(frames, (index + 1) % len(frames))
+        )
+
+    def restore_main_frame(self):
+        """
+        Restore the main application frame after macro playback ends.
+        """
+        for widget in self.root.winfo_children():
+            widget.grid_forget()
+        setup_ui(self)
+
     def update_playback_speed(self, value):
         try:
             self.playback_speed = float(value)
@@ -134,6 +194,10 @@ class AutoBotApp:
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
         print(f"[{level}] {log_entry.strip()}")
+
+        # Update the splash screen log if it's visible
+        if hasattr(self, "splash_log_label"):
+            self.splash_log_label.config(text=f"Latest Log: {message}")
 
     def clear_log(self):
         self.log_text.config(state=tk.NORMAL)
@@ -413,22 +477,56 @@ class AutoBotApp:
                 "No macro available. Please record or load a macro.", "ERROR"
             )
             return
-        self.log_message(f"Starting playback of macro: {macro_name}")
+
+        # Show splash screen
+        self.show_splash_screen(macro_name)
+        self.running.set()  # Set the running flag to True
+        # Start macro playback in a thread
         threading.Thread(
-            target=self._play_macro_thread, args=(events,), daemon=True
+            target=self._play_macro_with_repeat, args=(events,), daemon=True
         ).start()
+
+    def stop_macro_playback(self):
+        """
+        Stop macro playback safely.
+        """
+        self.running.clear()  # Stop any running threads
+        self.preview_running = False
+        self.recording = False
+        if self.k_listener:
+            self.k_listener.stop()
+        if self.m_listener:
+            self.m_listener.stop()
+
+    def _play_macro_with_repeat(self, events):
+        """
+        Play back a macro with optional repetitions.
+        Handles both finite and infinite repeats.
+        """
+        while self.running.is_set() or self.repeat_infinite_var.get():
+            self._play_macro_thread(events)
+            if not self.repeat_infinite_var.get():
+                break  # Stop after one iteration if not set to repeat infinitely
+
+        # Restore the main frame after playback ends
+        self.restore_main_frame()
 
     def _play_macro_thread(self, events):
         """
-        Play a macro with optional repetitions.
+        Play back a macro with delays between actions.
+        Checks for the kill switch during playback.
         """
         kb = KeyboardController()
-        delay_ms = int(self.delay_slider.get()) / 1000  # Convert ms to seconds
-
-        # Delay between macro events.
+        last_time = 0
         for event in events:
-            # Add delay before each action
-            time.sleep(delay_ms)
+            if not self.running.is_set():  # Check if the kill switch was activated
+                self.log_message("Macro playback stopped by user.")
+                return
+
+            delay = event["time"] - last_time
+            if delay > 0:
+                time.sleep(delay / self.playback_speed)
+            last_time = event["time"]
 
             etype = event["type"]
             if etype == "key_press":
@@ -439,54 +537,64 @@ class AutoBotApp:
                     self.log_message(
                         f"Error playing key press {event['key']}: {e}", "ERROR"
                     )
-
-        try:
-            repeat_count = int(self.repeat_count.get())
-        except ValueError:
-            repeat_count = 1
-
-        for _ in range(repeat_count):
-            last_time = 0
-            for event in events:
-                delay = event["time"] - last_time
-                if delay > 0:
-                    time.sleep(delay / self.playback_speed)
-                last_time = event["time"]
-
-                etype = event["type"]
-                if etype == "key_press":
-                    key_val = convert_key_str(event["key"])
-                    try:
-                        kb.press(key_val)
-                    except Exception as e:
-                        self.log_message(
-                            f"Error playing key press {event['key']}: {e}", "ERROR"
-                        )
-                elif etype == "key_release":
-                    key_val = convert_key_str(event["key"])
-                    try:
-                        kb.release(key_val)
-                    except Exception as e:
-                        self.log_message(
-                            f"Error playing key release {event['key']}: {e}", "ERROR"
-                        )
-                elif etype == "mouse_click":
-                    x, y = event["x"], event["y"]
-                    button_str = event["button"]
-                    button = (
-                        "left"
-                        if "left" in button_str
-                        else "right" if "right" in button_str else "middle"
+            elif etype == "key_release":
+                key_val = convert_key_str(event["key"])
+                try:
+                    kb.release(key_val)
+                except Exception as e:
+                    self.log_message(
+                        f"Error playing key release {event['key']}: {e}", "ERROR"
                     )
-                    if event["pressed"]:
-                        pyautogui.mouseDown(x=x, y=y, button=button)
-                    else:
-                        pyautogui.mouseUp(x=x, y=y, button=button)
-                elif etype == "mouse_scroll":
-                    dy = event["dy"]
-                    pyautogui.scroll(dy)
+            elif etype == "mouse_click":
+                x, y = event["x"], event["y"]
+                button_str = event["button"]
+                button = (
+                    "left"
+                    if "left" in button_str
+                    else "right" if "right" in button_str else "middle"
+                )
+                if event["pressed"]:
+                    pyautogui.mouseDown(x=x, y=y, button=button)
+                else:
+                    pyautogui.mouseUp(x=x, y=y, button=button)
+            elif etype == "mouse_scroll":
+                dy = event["dy"]
+                pyautogui.scroll(dy)
 
-            self.log_message(f"Macro repetition {_ + 1}/{repeat_count} completed.")
+        self.log_message("Macro playback finished.")
+
+    def setup_kill_switch(self):
+        """
+        Set up a global hotkey to stop macro playback.
+        """
+
+        def on_press(key):
+            try:
+                if key == Key.ctrl_l or key == Key.ctrl_r:  # Check for Ctrl key
+                    self.ctrl_pressed = True
+                elif key == Key.shift and self.ctrl_pressed:  # Check for Shift key
+                    self.shift_pressed = True
+            except AttributeError:
+                pass
+
+        def on_release(key):
+            try:
+                if key == Key.ctrl_l or key == Key.ctrl_r:
+                    self.ctrl_pressed = False
+                elif key == Key.shift:
+                    self.shift_pressed = False
+                elif key.char == "q" and self.ctrl_pressed and self.shift_pressed:
+                    self.log_message("Kill switch activated. Stopping macro playback.")
+                    self.stop_macro_playback()
+            except AttributeError:
+                pass
+
+        self.ctrl_pressed = False
+        self.shift_pressed = False
+        self.kill_switch_listener = pynput_keyboard.Listener(
+            on_press=on_press, on_release=on_release
+        )
+        self.kill_switch_listener.start()
 
     def save_macro_to_file(self):
         if not self.recorded_macro:
