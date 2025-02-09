@@ -99,6 +99,7 @@ class AutoBotApp:
         self.loaded_macros = {}
         self.record_start_time = None
         self.playback_speed = 1.0
+        self.setup_kill_switch()
 
         # Add ROI-related attributes
         self.roi_start = None  # Start point of ROI selection
@@ -220,7 +221,7 @@ class AutoBotApp:
         windows = [w.title for w in gw.getAllWindows() if w.title]
         self.window_list["values"] = windows
         if windows:
-            self.window_list.set(windows[0])  # Use set method instead of current
+            self.window_list.current(0)  # Use set method instead of current
             self.game_window = self.get_selected_window()
 
     def get_selected_window(self):
