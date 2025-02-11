@@ -187,8 +187,9 @@ def setup_ui(self):
         row=2, column=0, columnspan=4, sticky="ew", pady=5
     )  # Place in row 2
     ttk.Label(repeat_frame, text="Repeat:").grid(row=0, column=0, sticky="w")
-    self.repeat_count = ttk.Entry(repeat_frame, width=5)
-    self.repeat_count.insert(0, "1")
+    self.repeat_count = ttk.Entry(
+        repeat_frame, textvariable=self.repeat_count_var, width=5
+    )
     self.repeat_count.grid(row=0, column=1, sticky="w", padx=5)
     self.repeat_infinite_var = tk.BooleanVar()
     ttk.Checkbutton(

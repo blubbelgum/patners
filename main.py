@@ -100,6 +100,7 @@ class AutoBotApp:
         self.record_start_time = None
         self.playback_speed = 1.0
         self.setup_kill_switch()
+        self.repeat_count_var = tk.IntVar(value=1)  # Default to 1 repetition
 
         # Add ROI-related attributes
         self.roi_start = None  # Start point of ROI selection
@@ -122,23 +123,26 @@ class AutoBotApp:
 
     def show_splash_screen(self, macro_name):
         """
-        Show the splash screen with a GIF and log information.
+        Show the splash screen as a popup window with the same geometry as the main window.
         """
-        # Hide all other widgets
-        for widget in self.root.winfo_children():
-            widget.grid_forget()
+        # Minimize the main application window
+        self.root.iconify()
 
-        # Create the splash screen frame
-        splash_frame = ttk.Frame(self.root, padding=20)
-        splash_frame.grid(row=0, column=0, sticky="nsew")
-        splash_frame.rowconfigure(0, weight=1)
-        splash_frame.columnconfigure(0, weight=1)
+        # Create a new Toplevel window for the splash screen
+        self.splash_popup = tk.Toplevel(self.root)
+        self.splash_popup.title("Running Macro")
+
+        # Get the geometry of the main window
+        main_geometry = self.root.geometry()  # Format: "widthxheight+x+y"
+        self.splash_popup.geometry(
+            main_geometry
+        )  # Apply the same geometry to the popup
 
         # Add GIF animation
         gif_path = "assets/loading.gif"  # Replace with your GIF path
         try:
             gif = Image.open(gif_path)
-            frames = frames = [
+            frames = [
                 ImageTk.PhotoImage(
                     frame.convert("RGBA").resize(
                         (200, int(200 * frame.height / frame.width))
@@ -146,22 +150,27 @@ class AutoBotApp:
                 )
                 for frame in ImageSequence.Iterator(gif)
             ]
-            self.gif_label = ttk.Label(splash_frame)
-            self.gif_label.grid(row=0, column=0, pady=20)
+            self.gif_label = ttk.Label(self.splash_popup)
+            self.gif_label.pack(pady=20)
             self.animate_gif(frames, 0)
         except FileNotFoundError:
-            ttk.Label(splash_frame, text="GIF not found.", font=("Arial", 16)).grid(
-                row=0, column=0, pady=20
-            )
+            ttk.Label(
+                self.splash_popup, text="GIF not found.", font=("Arial", 16)
+            ).pack(pady=20)
 
         # Add centered text for the macro name and latest log
         ttk.Label(
-            splash_frame, text=f"Running Macro: {macro_name}", font=("Arial", 12)
-        ).grid(row=1, column=0, pady=10)
+            self.splash_popup, text=f"Running Macro: {macro_name}", font=("Arial", 12)
+        ).pack(pady=10)
         self.splash_log_label = ttk.Label(
-            splash_frame, text="Latest Log: Waiting...", font=("Arial", 10)
+            self.splash_popup, text="Latest Log: Waiting...", font=("Arial", 10)
         )
-        self.splash_log_label.grid(row=2, column=0, pady=10)
+        self.splash_log_label.pack(pady=10)
+
+        # Ensure the popup closes when the macro finishes
+        self.splash_popup.protocol(
+            "WM_DELETE_WINDOW", lambda: None
+        )  # Disable manual closing
 
     def animate_gif(self, frames, index):
         """
@@ -174,11 +183,11 @@ class AutoBotApp:
 
     def restore_main_frame(self):
         """
-        Restore the main application frame after macro playback ends.
+        Restore the main application window and close the splash screen popup.
         """
-        for widget in self.root.winfo_children():
-            widget.grid_forget()
-        setup_ui(self)
+        if hasattr(self, "splash_popup"):
+            self.splash_popup.destroy()  # Close the splash screen popup
+        self.root.deiconify()  # Restore the main application window
 
     def update_playback_speed(self, value):
         try:
@@ -498,18 +507,23 @@ class AutoBotApp:
             self.k_listener.stop()
         if self.m_listener:
             self.m_listener.stop()
+        self.restore_main_frame()  # Restore the main application frame
 
     def _play_macro_with_repeat(self, events):
         """
         Play back a macro with optional repetitions.
         Handles both finite and infinite repeats.
         """
-        while self.running.is_set() or self.repeat_infinite_var.get():
+        repeat_count = self.repeat_count_var.get()
+        for _ in range(repeat_count):
+            if not self.running.is_set():  # Check if playback should stop
+                break
             self._play_macro_thread(events)
-            if not self.repeat_infinite_var.get():
-                break  # Stop after one iteration if not set to repeat infinitely
+        if self.repeat_infinite_var.get():
+            while self.running.is_set():
+                self._play_macro_thread(events)
 
-        # Restore the main frame after playback ends
+        # Restore the main frame after playback ends (TODO: test this)
         self.restore_main_frame()
 
     def _play_macro_thread(self, events):
@@ -566,35 +580,18 @@ class AutoBotApp:
 
     def setup_kill_switch(self):
         """
-        Set up a global hotkey to stop macro playback.
+        Set up a global hotkey to stop macro playback using the Windows key.
         """
 
         def on_press(key):
             try:
-                if key == Key.ctrl_l or key == Key.ctrl_r:  # Check for Ctrl key
-                    self.ctrl_pressed = True
-                elif key == Key.shift and self.ctrl_pressed:  # Check for Shift key
-                    self.shift_pressed = True
-            except AttributeError:
-                pass
-
-        def on_release(key):
-            try:
-                if key == Key.ctrl_l or key == Key.ctrl_r:
-                    self.ctrl_pressed = False
-                elif key == Key.shift:
-                    self.shift_pressed = False
-                elif key.char == "q" and self.ctrl_pressed and self.shift_pressed:
+                if key == Key.cmd:  # Check for Windows key
                     self.log_message("Kill switch activated. Stopping macro playback.")
                     self.stop_macro_playback()
             except AttributeError:
                 pass
 
-        self.ctrl_pressed = False
-        self.shift_pressed = False
-        self.kill_switch_listener = pynput_keyboard.Listener(
-            on_press=on_press, on_release=on_release
-        )
+        self.kill_switch_listener = pynput_keyboard.Listener(on_press=on_press)
         self.kill_switch_listener.start()
 
     def save_macro_to_file(self):
