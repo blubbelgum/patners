@@ -14,6 +14,7 @@ from pynput import mouse, keyboard as pynput_keyboard
 from pynput.keyboard import Key, Controller as KeyboardController
 import os
 import re
+import easyocr
 from datetime import datetime
 from modules.ui import setup_ui
 
@@ -42,27 +43,52 @@ def convert_key_str(key_str):
 
 # --- Macro System (for automation) ---
 class ImageMacroSystem:
-    def __init__(self, templates, log_message):
+    def __init__(self, templates, log_message, reader):
         self.templates = templates
         self.log_message = log_message
+        self.reader = reader
 
     def detect_template(self, game_window, template_name):
         template = self.templates.get(template_name)
-        if not template:
+        if template is None:
+            self.log_message(f"Template '{template_name}' not found.", "ERROR")
             return False
+        #     return False
         screenshot = self.get_screenshot(game_window)
         result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
         return np.max(result) > 0.8
 
-    def detect_text(self, game_window, pattern):
-        if pytesseract is None:
-            self.log_message("Tesseract OCR is not available.", "ERROR")
+    def detect_text(self, image, pattern):
+        """
+        Detect text in the given image using EasyOCR and match it against a regex pattern.
+        """
+        try:
+            # Convert the image to grayscale (optional, but improves performance)
+            gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
+
+            # Use EasyOCR to extract text
+            results = self.reader.readtext(gray)
+
+            # Combine all detected text into a single string
+            detected_text = " ".join([result[1] for result in results])
+
+            # Log the detected text for debugging
+            self.log_message(f"Detected text: {detected_text}")
+
+            # Match the detected text against the provided regex pattern
+            match = re.search(pattern, detected_text)
+            if match:
+                self.log_message(
+                    f"Detected text matching pattern '{pattern}': {match.group()}"
+                )
+                return match.groups()
+
+            self.log_message(f"No text matching pattern '{pattern}' found.")
             return None
-        screenshot = self.get_screenshot(game_window)
-        gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
-        text = pytesseract.image_to_string(gray)
-        match = re.search(pattern, text)
-        return match.groups() if match else None
+
+        except Exception as e:
+            self.log_message(f"Error during text detection: {str(e)}", "ERROR")
+            return None
 
     def get_screenshot(self, game_window):
         try:
@@ -101,6 +127,11 @@ class AutoBotApp:
         self.playback_speed = 1.0
         self.setup_kill_switch()
         self.repeat_count_var = tk.IntVar(value=1)  # Default to 1 repetition
+        # Initialize the macro system
+        self.reader = easyocr.Reader(["en"])  # Add more languages if needed
+        self.macro_system = ImageMacroSystem(
+            self.templates, self.log_message, self.reader
+        )
 
         # Add ROI-related attributes
         self.roi_start = None  # Start point of ROI selection
@@ -297,7 +328,8 @@ class AutoBotApp:
 
     def capture_preview(self):
         """
-        Captures the game window screenshot and displays it on the Canvas.
+        Captures the game window screenshot, performs OCR using EasyOCR,
+        and displays the image with bounding boxes on the Canvas.
         """
         window = self.get_selected_window()
         if window:
@@ -306,20 +338,35 @@ class AutoBotApp:
                 client_left, client_top, client_width, client_height = (
                     self.get_client_area(window)
                 )
-
                 # Capture the full game window screenshot
                 img = pyautogui.screenshot(
                     region=(client_left, client_top, client_width, client_height)
                 )
 
-                # Scale down the image for preview
-                img.thumbnail((460, 320))
-                self.preview_image = ImageTk.PhotoImage(img)
+                # Convert the image to OpenCV format for OCR processing
+                img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
-                # Clear the Canvas and display the new image
+                # Perform OCR using EasyOCR
+                results = self.reader.readtext(img_cv)
+
+                # Draw bounding boxes around detected text
+                for result in results:
+                    bbox, text, confidence = result
+                    top_left = tuple(map(int, bbox[0]))
+                    bottom_right = tuple(map(int, bbox[2]))
+                    cv2.rectangle(img_cv, top_left, bottom_right, (0, 255, 0), 2)
+
+                # Convert the annotated image back to PIL format
+                img_annotated = Image.fromarray(cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB))
+
+                # Scale down the image for preview
+                img_annotated.thumbnail((460, 320))
+
+                # Update the preview canvas with the annotated image
+                self.preview_image = ImageTk.PhotoImage(img_annotated)
                 self.preview_canvas.delete("all")  # Clear previous content
                 self.preview_canvas.config(
-                    width=img.width, height=img.height
+                    width=img_annotated.width, height=img_annotated.height
                 )  # Adjust Canvas size
                 self.preview_canvas.create_image(
                     0, 0, anchor=tk.NW, image=self.preview_image
@@ -648,6 +695,141 @@ class AutoBotApp:
 
             # Execute the action
             self._execute_macro_event(event)
+
+    def click_template(self, game_window, template_name):
+        """
+        Click on a detected template image.
+        """
+        template = self.templates.get(template_name)
+        if not template:
+            self.log_message(f"Template '{template_name}' not found.", "ERROR")
+            return False
+
+        screenshot = self.macro_system.get_screenshot(game_window)
+        result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+        if max_val > 0.8:  # Confidence threshold
+            x = game_window.left + max_loc[0] + template.shape[1] // 2
+            y = game_window.top + max_loc[1] + template.shape[0] // 2
+            pyautogui.click(x, y)
+            return True
+
+        self.log_message(f"Failed to click template '{template_name}'.")
+        return False
+
+    def get_arrow_region(self, game_window):
+        """
+        Calculate the region near the arrow image for OCR.
+        """
+        arrow_template = "arrow"
+        screenshot = self.macro_system.get_screenshot(game_window)
+        template = self.templates.get(arrow_template)
+        if template is None:
+            self.log_message("Arrow template not loaded.", "ERROR")
+            return None
+
+        result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+        _, _, _, max_loc = cv2.minMaxLoc(result)
+
+        # Define a region around the arrow (adjust offsets as needed)
+        arrow_x, arrow_y = max_loc
+        offset_x, offset_y = 50, 50  # Offset from the arrow position
+        region_width, region_height = 200, 50  # Size of the region
+
+        return (
+            game_window.left + arrow_x - offset_x,
+            game_window.top + arrow_y - offset_y,
+            region_width,
+            region_height,
+        )
+
+    def auto_farm_macro(self):
+        """
+        Auto-farm macro preset using OCR and image recognition.
+        """
+        self.log_message("Starting auto-farm macro...")
+        game_window = self.get_selected_window()
+        if not game_window:
+            self.log_message("No game window selected.", "ERROR")
+            return
+
+        # Step 1: Check for the arrow image
+        arrow_template = "arrow"  # Template name for the arrow image
+        if not self.macro_system.detect_template(game_window, arrow_template):
+            self.log_message("Arrow image not found. Stopping macro.")
+            return
+        self.log_message(
+            "Arrow image detected. Capturing game window for text extraction..."
+        )
+
+        # Step 2: Capture the entire game window (excluding title bar and borders)
+        try:
+            # Get the client area dimensions (excluding title bar and borders)
+            client_left, client_top, client_width, client_height = self.get_client_area(
+                game_window
+            )
+
+            # Capture the screenshot of the client area
+            screenshot = pyautogui.screenshot(
+                region=(client_left, client_top, client_width, client_height)
+            )
+            # export screenshot for debugging
+            gray = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2GRAY)
+
+            # Save the screenshot for debugging with the bounding box on text region
+            cv2.imwrite("screenshot.png", gray)
+            cv2.rectangle(
+                gray,
+                (client_left, client_top),
+                (client_left + client_width, client_top + client_height),
+                (0, 255, 0),
+                2,
+            )
+            cv2.imwrite("screenshot_bbox.png", gray)
+
+            # Perform OCR on the screenshot
+            pytesseract.pytesseract.tesseract_cmd = (
+                r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+            )
+            text = pytesseract.image_to_string(gray)
+            match = re.search(
+                r"(\d)/5", text
+            )  # Look for patterns like "1/5", "2/5", etc.
+
+            if not match:
+                self.log_message("No squad count text detected in the game window.")
+                return
+
+            current_squads, total_squads = int(match.group(1)), 5
+            available_squads = total_squads - current_squads
+
+            if available_squads <= 0:
+                self.log_message(
+                    f"No squads available for farming ({current_squads}/5). Stopping macro."
+                )
+                return
+
+            self.log_message(f"{available_squads} squads available for farming.")
+        except Exception as e:
+            self.log_message(f"Error during text detection: {str(e)}", "ERROR")
+            return
+
+        # Step 3: Check for the region image and click if it exists
+        region_image_template = "region_image"  # Template name for the region image
+        if self.macro_system.detect_template(game_window, region_image_template):
+            self.log_message("Region image detected. Clicking...")
+            self.click_template(game_window, region_image_template)
+        else:
+            self.log_message("Region image not found. Skipping click.")
+
+        # Step 4: Perform farming actions (e.g., repeat based on available squads)
+        for i in range(available_squads):
+            self.log_message(f"Farming with squad {i + 1}...")
+            # Simulate farming actions here (e.g., clicks, key presses)
+            time.sleep(1)  # Simulate delay between actions
+
+        self.log_message("Auto-farm macro completed.")
 
     def start_roi_selection(self, event):
         """Start selecting the ROI."""

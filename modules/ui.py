@@ -196,6 +196,19 @@ def setup_ui(self):
         repeat_frame, text="Infinitely", variable=self.repeat_infinite_var
     ).grid(row=0, column=2, sticky="w", padx=5)
 
+    # Define automation_ctrl_frame
+    automation_ctrl_frame = ttk.LabelFrame(
+        self.automation_tab, text="Automation Controls", padding=5
+    )
+    automation_ctrl_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+
+    # Add the "Start Auto-Farm Macro" button to automation_ctrl_frame
+    ttk.Button(
+        automation_ctrl_frame,
+        text="Start Auto-Farm Macro",
+        command=self.auto_farm_macro,
+    ).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
     # Macro Library Frame
     lib_frame = ttk.Frame(macro_frame)
     lib_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=5)  # Move to row 3
