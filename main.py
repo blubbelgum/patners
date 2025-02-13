@@ -312,7 +312,7 @@ class AutoBotApp:
             # Approximate title bar and border sizes
             # These values may need adjustment based on the operating system
             title_bar_height = 30  # Approximate height of the title bar
-            border_width = 4  # Approximate width of the borders
+            border_width = 8  # Approximate width of the borders
 
             # Adjust the region to exclude the title bar and borders
             client_left = left + border_width
@@ -857,14 +857,13 @@ class AutoBotApp:
             self.roi_end = (event.x, event.y)
             x1, y1 = self.roi_start
             x2, y2 = self.roi_end
+
             # Normalize coordinates to ensure top-left and bottom-right
             roi_x1, roi_y1 = min(x1, x2), min(y1, y2)
             roi_x2, roi_y2 = max(x1, x2), max(y1, y2)
 
             # Check if the ROI is too small
-            if (
-                roi_x2 - roi_x1 <= 10 or roi_y2 - roi_y1 <= 10
-            ):  # Arbitrary threshold for "too small"
+            if roi_x2 - roi_x1 <= 10 or roi_y2 - roi_y1 <= 10:  # Arbitrary threshold
                 self.log_message(
                     "Selected ROI is too small. Using the entire game window.",
                     "WARNING",
@@ -876,40 +875,26 @@ class AutoBotApp:
                     f"Selected ROI: ({roi_x1}, {roi_y1}) -> ({roi_x2}, {roi_y2})"
                 )
 
-                # Capture and display the cropped ROI image
-                window = self.get_selected_window()
-                if window:
-                    try:
-                        img = pyautogui.screenshot(
-                            region=(
-                                window.left + roi_x1,
-                                window.top + roi_y1,
-                                roi_x2 - roi_x1,
-                                roi_y2 - roi_y1,
-                            )
+            # Capture and display the cropped ROI image
+            window = self.get_selected_window()
+            if window:
+                try:
+                    img = pyautogui.screenshot(
+                        region=(
+                            window.left + roi_x1,
+                            window.top + roi_y1,
+                            roi_x2 - roi_x1,
+                            roi_y2 - roi_y1,
                         )
-                        img.thumbnail((480, 480))  # Resize for display
-                        self.roi_image = ImageTk.PhotoImage(img)
-                        self.roi_display_label.config(image=self.roi_image)
-                    except Exception as e:
-                        self.log_message(
-                            f"Error capturing ROI image: {str(e)}", "ERROR"
-                        )
+                    )
+                    img.thumbnail((480, 480))  # Resize for display
+                    self.roi_image = ImageTk.PhotoImage(img)
+                    self.roi_display_label.config(image=self.roi_image)
+                except Exception as e:
+                    self.log_message(f"Error capturing ROI image: {str(e)}", "ERROR")
 
-            # Prompt user to associate the ROI with a resource
-            resource = simpledialog.askstring(
-                "Resource Selection", "Enter resource name (e.g., food, wood):"
-            )
-            if resource:
-                self.resource_rois[resource.lower()] = (roi_x1, roi_y1, roi_x2, roi_y2)
-                self.log_message(
-                    f"ROI for '{resource}' set: ({roi_x1}, {roi_y1}) -> ({roi_x2}, {roi_y2})"
-                )
-            else:
-                self.log_message("ROI selection canceled.")
-
-            self.roi_start = None
-            self.roi_end = None
+        self.roi_start = None
+        self.roi_end = None
 
     def show_roi_popup(self):
         """
@@ -920,7 +905,6 @@ class AutoBotApp:
             return
 
         # Capture the game window screenshot
-        # Get the client area dimensions (excluding title bar and borders)
         client_left, client_top, client_width, client_height = self.get_client_area(
             self.game_window
         )
@@ -931,22 +915,25 @@ class AutoBotApp:
         # Create a popup window
         self.roi_popup = tk.Toplevel(self.root)
         self.roi_popup.title("ROI Selection")
-        self.roi_popup.geometry("800x600")  # Set a fixed size for the popup
+
+        # Set the popup size to match the client area dimensions
+        self.roi_popup.geometry(f"{client_width}x{client_height + 80}")
         self.roi_popup.resizable(False, False)
 
         # Center the popup window on the screen
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
-        x = (screen_width - 800) // 2
-        y = (screen_height - 600) // 2
+        x = (screen_width - client_width) // 2
+        y = (screen_height - client_height) // 2
         self.roi_popup.geometry(f"+{x}+{y}")
 
         # Add a Canvas for the preview
-        self.roi_canvas = tk.Canvas(self.roi_popup, bg="gray", width=800, height=600)
+        self.roi_canvas = tk.Canvas(
+            self.roi_popup, bg="gray", width=client_width, height=client_height
+        )
         self.roi_canvas.pack(fill=tk.BOTH, expand=True)
 
-        # Scale down the image for preview
-        img.thumbnail((800, 600))
+        # Display the screenshot in the Canvas
         self.roi_preview_image = ImageTk.PhotoImage(img)
         self.roi_canvas.create_image(0, 0, anchor=tk.NW, image=self.roi_preview_image)
 
@@ -961,9 +948,9 @@ class AutoBotApp:
         )
         reset_button.pack(pady=5)
 
-        # Add a Done button to close the popup
+        # Add a Done button to save the ROI and close the popup
         done_button = ttk.Button(
-            self.roi_popup, text="Done", command=self.roi_popup.destroy
+            self.roi_popup, text="Done", command=self.save_roi_and_close_popup
         )
         done_button.pack(pady=5)
 
@@ -976,10 +963,25 @@ class AutoBotApp:
         self.roi_canvas.create_image(0, 0, anchor=tk.NW, image=self.roi_preview_image)
         self.log_message("ROI selection reset.")
 
-    # def check_game_status(self):
-    #     if self.game_window and not self.game_window.isActive:
-    #         self.stop_automation()
-    #     self.root.after(1000, self.check_game_status)
+    def save_roi_and_close_popup(self):
+        """
+        Save the selected ROI and close the ROI selection popup.
+        """
+        if self.selected_roi:
+            # Prompt the user to associate the ROI with a resource
+            resource = simpledialog.askstring(
+                "Resource Selection", "Enter resource name (e.g., food, wood):"
+            )
+            if resource:
+                self.resource_rois[resource.lower()] = self.selected_roi
+                self.log_message(f"ROI for '{resource}' set: {self.selected_roi}")
+            else:
+                self.log_message("ROI selection canceled.")
+        else:
+            self.log_message("No ROI selected.")
+
+        # Close the popup
+        self.roi_popup.destroy()
 
     def on_closing(self):
         # self.stop_automation()
